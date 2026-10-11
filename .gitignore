@@ -1,0 +1,11 @@
+@'
+node_modules/
+.next/
+dist/
+build/
+coverage/
+uploads/
+.env
+.env.*
+!.env.example
+'@ | Set-Content .gitignore

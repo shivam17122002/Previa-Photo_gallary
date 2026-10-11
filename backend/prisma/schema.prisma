@@ -1,0 +1,194 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum ScanStatus {
+  PENDING
+  CLEAN
+  INFECTED
+  SKIPPED
+}
+
+enum NotificationType {
+  UPLOAD_SUCCESS
+  UPLOAD_FAILED
+  MALWARE_DETECTED
+  SECURITY_ALERT
+  ADMIN_APPROVAL
+  SYSTEM
+}
+
+enum UploadStatus {
+  INITIALIZED
+  UPLOADING
+  COMPLETED
+  ABORTED
+}
+
+model User {
+  id                  String           @id @default(uuid())
+  email               String           @unique
+  passwordHash        String
+  fullName            String
+  avatarUrl           String?
+  role                Role             @default(USER)
+  status              UserStatus       @default(PENDING)
+  emailVerified       Boolean          @default(false)
+  verificationToken   String?
+  resetPasswordToken  String?
+  resetPasswordExpires DateTime?
+  storageQuota        BigInt           @default(5368709120) // 5GB in bytes
+  usedStorage         BigInt           @default(0)
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+
+  refreshTokens       RefreshToken[]
+  folders             Folder[]
+  files               File[]
+  uploadSessions      UploadSession[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id          String    @id @default(uuid())
+  tokenHash   String
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model Folder {
+  id          String    @id @default(uuid())
+  name        String
+  parentId    String?
+  parent      Folder?   @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children    Folder[]  @relation("FolderTree")
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  files       File[]
+  isTrash     Boolean   @default(false)
+  trashedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([userId, parentId, isTrash])
+  @@index([userId, isTrash])
+  @@map("folders")
+}
+
+model File {
+  id          String      @id @default(uuid())
+  name        String
+  originalName String
+  mimeType    String
+  size        BigInt
+  storageKey  String
+  folderId    String?
+  folder      Folder?     @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isFavorite  Boolean     @default(false)
+  isTrash     Boolean     @default(false)
+  trashedAt   DateTime?
+  scanStatus  ScanStatus  @default(PENDING)
+  scanResult  String?
+  checksum    String?
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([userId, folderId, isTrash])
+  @@index([userId, isFavorite])
+  @@index([userId, isTrash])
+  @@map("files")
+}
+
+model UploadSession {
+  id            String        @id @default(uuid())
+  uploadId      String
+  storageKey    String
+  fileName      String
+  fileSize      BigInt
+  mimeType      String
+  totalParts    Int
+  userId        String
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folderId      String?
+  status        UploadStatus  @default(INITIALIZED)
+  parts         UploadPart[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([userId])
+  @@map("upload_sessions")
+}
+
+model UploadPart {
+  id          String        @id @default(uuid())
+  sessionId   String
+  session     UploadSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  partNumber  Int
+  etag        String
+  size        BigInt
+  uploadedAt  DateTime      @default(now())
+
+  @@unique([sessionId, partNumber])
+  @@map("upload_parts")
+}
+
+model Notification {
+  id          String            @id @default(uuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  message     String
+  type        NotificationType  @default(SYSTEM)
+  isRead      Boolean           @default(false)
+  metadata    Json?
+  createdAt   DateTime          @default(now())
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id          String    @id @default(uuid())
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action      String
+  resource    String
+  details     Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime  @default(now())
+
+  @@index([userId])
+  @@map("audit_logs")
+}
